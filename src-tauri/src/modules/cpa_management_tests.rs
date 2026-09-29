@@ -159,7 +159,13 @@ fn public_view_never_contains_management_key_or_token_fingerprint() {
 
 #[tokio::test]
 async fn token_update_uses_patch_and_preserves_unrelated_remote_fields() {
-    let (url, calls, thread) = server(vec![(200, json!({"status":"ok"}))]);
+    let (url, calls, thread) = server(vec![
+        (
+            200,
+            json!({"type":"codex","account_id":"account-123","email":"test@example.com"}),
+        ),
+        (200, json!({"status":"ok"})),
+    ]);
     transfer(
         &client().unwrap(),
         &connection(url),
@@ -170,7 +176,7 @@ async fn token_update_uses_patch_and_preserves_unrelated_remote_fields() {
     .await
     .unwrap();
     thread.join().unwrap();
-    let call = calls.lock().unwrap()[0].clone();
+    let call = calls.lock().unwrap()[1].clone();
     assert!(call.starts_with("PATCH /v8/management/credentials/fields "));
     assert!(call
         .to_lowercase()
@@ -344,6 +350,10 @@ async fn deleting_remote_fences_sync_and_failure_keeps_local_account() {
     let name = managed_filename(&account.id);
     let (url, _, thread) = server(vec![
         (200, json!({"files":[remote(&name)]})),
+        (
+            200,
+            json!({"type":"codex","account_id":account.account_id,"email":account.email}),
+        ),
         (500, json!({})),
     ]);
     let mut conn = connection(url);
@@ -468,4 +478,24 @@ async fn blocked_connection_and_stale_id_never_send_requests() {
         "CPA_CONNECTION_CHANGED"
     );
     sync_once().await.unwrap();
+}
+
+#[tokio::test]
+async fn replaced_remote_identity_blocks_token_update() {
+    let (url, calls, thread) = server(vec![(
+        200,
+        json!({"type":"codex","account_id":"another-account","email":"test@example.com"}),
+    )]);
+    let result = transfer(
+        &client().unwrap(),
+        &connection(url),
+        "old.json",
+        payload(&fixture()).unwrap(),
+        true,
+    )
+    .await;
+    thread.join().unwrap();
+    assert_eq!(result.err().unwrap(), "CPA_IDENTITY_MISMATCH");
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert!(calls.lock().unwrap()[0].starts_with("GET "));
 }

@@ -321,7 +321,7 @@ pub fn load_account_index() -> CodexAccountIndex {
     }
 }
 
-fn load_account_index_checked() -> Result<CodexAccountIndex, String> {
+pub(crate) fn load_account_index_checked() -> Result<CodexAccountIndex, String> {
     let path = get_accounts_storage_path();
     if !path.exists() {
         logger::log_warn(&format!(

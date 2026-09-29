@@ -210,6 +210,26 @@ fn managed_filename(id: &str) -> String {
     format!("cockpit-codex-{:x}.json", Sha256::digest(id.as_bytes()))
 }
 
+fn identity_matches(remote: &Value, expected: &Value) -> bool {
+    let expected_id = expected
+        .get("account_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty());
+    let expected_email = expected
+        .get("email")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty());
+    remote.get("type").and_then(Value::as_str) == Some("codex")
+        && expected_id.is_some()
+        && remote.get("account_id").and_then(Value::as_str) == expected_id
+        && expected_email.is_some_and(|email| {
+            remote
+                .get("email")
+                .and_then(Value::as_str)
+                .is_some_and(|s| s.eq_ignore_ascii_case(email))
+        })
+}
+
 fn valid_account_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 200
@@ -412,8 +432,9 @@ pub async fn configure(
         known_account_ids: if default_upload && old.as_ref().is_some_and(|c| c.default_upload) {
             old.as_ref().unwrap().known_account_ids.clone()
         } else {
-            codex_account::list_accounts_checked()
+            codex_account::load_account_index_checked()
                 .map_err(|_| "CPA_LOCAL_MISSING")?
+                .accounts
                 .into_iter()
                 .map(|a| a.id)
                 .collect()
@@ -480,6 +501,20 @@ async fn transfer(
     existing: bool,
 ) -> Result<(), String> {
     if existing {
+        // A different administrator may have replaced a file since enrollment.
+        // Recheck identity before merging local tokens into that exact filename.
+        let remote = request(
+            client,
+            connection,
+            Method::GET,
+            "/download",
+            Some(file_name),
+            None,
+        )
+        .await?;
+        if !identity_matches(&remote, &data) {
+            return Err("CPA_IDENTITY_MISMATCH".into());
+        }
         // Merge only token fields: preserve CPA's disabled state, proxy, priority,
         // excluded models and other remote metadata. PATCH never creates a file.
         let mut fields = data;
@@ -678,6 +713,25 @@ pub async fn delete_remote(id: &str, name: &str, delete_local: bool) -> Result<(
         if !writable(file) {
             return Err("CPA_READ_ONLY".into());
         }
+        if delete_local {
+            let account = codex_account::load_account(local_id.as_deref().unwrap())
+                .ok_or("CPA_LOCAL_MISSING")?;
+            let remote = request(
+                &client,
+                &connection,
+                Method::GET,
+                "/download",
+                Some(name),
+                None,
+            )
+            .await?;
+            if !identity_matches(
+                &remote,
+                &json!({"account_id":account.account_id,"email":account.email}),
+            ) {
+                return Err("CPA_IDENTITY_MISMATCH".into());
+            }
+        }
         match request(&client, &connection, Method::DELETE, "", Some(name), None).await {
             Ok(value) => expect_ok(value),
             Err(e) if e == "CPA_NOT_FOUND" => Ok(()),
@@ -734,18 +788,10 @@ pub async fn link_existing(id: &str, name: &str, account_id: &str) -> Result<(),
             None,
         )
         .await?;
-        let local_account = account
-            .account_id
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-            .ok_or("CPA_IDENTITY_MISMATCH")?;
-        if remote.get("type").and_then(Value::as_str) != Some("codex")
-            || remote.get("account_id").and_then(Value::as_str) != Some(local_account)
-            || !remote
-                .get("email")
-                .and_then(Value::as_str)
-                .is_some_and(|s| s.eq_ignore_ascii_case(&account.email))
-        {
+        if !identity_matches(
+            &remote,
+            &json!({"account_id":account.account_id,"email":account.email}),
+        ) {
             return Err("CPA_IDENTITY_MISMATCH".into());
         }
         Ok(())
