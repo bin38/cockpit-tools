@@ -407,6 +407,8 @@ brew install --cask --force cockpit-tools
 
 ## 开发与构建
 
+本 fork 新增 **Codex → CPA 管理**：自定义服务器、已有凭据管理、关联删除与新账号默认上传。使用限制、安全说明和桌面构建命令见 [CPA 管理指南](docs/CPA_MANAGEMENT.md)。
+
 ### 前置要求
 
 - Node.js v18+

@@ -28,6 +28,7 @@ import type { CodexAccountsViewProps } from "./CodexAccountsView";
 import { CodexAddAccountDialog } from "./CodexAddAccountDialog";
 import { useCodexPelicanStore } from "../stores/useCodexPelicanStore";
 import { CodexRecycleBinModal } from "../components/CodexRecycleBinModal";
+import { CpaManagementModal } from "../components/CpaManagementModal";
 import { emitAccountsChanged } from "../utils/accountSyncEvents";
 import { PELICAN_GROUPS_CHANGED } from "../components/codex/pelican/PelicanResults";
 
@@ -358,6 +359,7 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
     viewMode,
   } = props;
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
+  const [cpaOpen, setCpaOpen] = useState(false);
   const recycleBinButton = (
     <button type="button" className="btn btn-secondary" onClick={() => setRecycleBinOpen(true)}>
       <Trash2 size={14} /><span>{t("common.recycleBin.title")}</span>
@@ -371,6 +373,12 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
   useModalScrollLock(Boolean(quickSwitchAccountId || editingApiKeyCredentialsId));
   return (
         <>
+          {cpaOpen && <CpaManagementModal accounts={accounts} initialSelected={props.selected}
+            maskAccountText={maskAccountText} onClose={() => setCpaOpen(false)}
+            onAccountsChanged={async () => {
+              await store.fetchAccounts();
+              await emitAccountsChanged({ platformId: "codex", reason: "delete" });
+            }} />}
           {recycleBinOpen && <CodexRecycleBinModal
             onClose={() => setRecycleBinOpen(false)}
             maskAccountText={maskAccountText}
@@ -552,6 +560,7 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
               )}
             </div>
             <div className="toolbar-right">
+              <button type="button" className="btn btn-secondary" onClick={() => setCpaOpen(true)}>{t("cpa.title", "CPA 管理")}</button>
               <button
                 className="btn btn-primary icon-only"
                 onClick={() => openCodexAddModal("tempLogin")}

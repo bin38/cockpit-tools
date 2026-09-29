@@ -62,6 +62,7 @@ pub mod codex_thread_sync;
 pub mod codex_wakeup;
 pub mod codex_wakeup_scheduler;
 pub mod config;
+pub mod cpa_management;
 pub mod cursor_account;
 pub mod cursor_instance;
 pub mod cursor_oauth;

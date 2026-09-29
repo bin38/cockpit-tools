@@ -2,6 +2,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import enResources from '../locales/en.json';
 import zhCnResources from '../locales/zh-CN.json';
+import { cpaEn, cpaZhCn } from './cpa';
 
 type LocaleModule = { default: Record<string, unknown> };
 
@@ -123,8 +124,8 @@ function bootstrapI18n(savedLanguage: string): string {
     .use(initReactI18next)
     .init({
       resources: {
-        en: { translation: enResources },
-        'zh-cn': { translation: zhCnResources },
+        en: { translation: { ...enResources, cpa: cpaEn } },
+        'zh-cn': { translation: { ...zhCnResources, cpa: cpaZhCn } },
       },
       lng: bootstrapLanguage,
       fallbackLng: 'en',
