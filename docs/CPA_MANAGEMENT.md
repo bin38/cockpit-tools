@@ -41,7 +41,7 @@ npm ci
 npm run tauri -- build --config src-tauri/tauri.cpa.conf.json
 ```
 
-需要 Node/npm、Rust、Go 和对应系统 Tauri 构建工具。本 fork 的打包覆盖配置使用独立应用标识与 `Cockpit Tools CPA` 名称，不生成官方 updater 签名产物，并清空官方自动更新地址，避免二次开发版本被上游自动更新覆盖。未配置 Apple Developer 签名/公证；本地产物不是已公证发行版。应用仍沿用 Cockpit 数据目录，验证时应设置独立 `COCKPIT_TOOLS_DATA_DIR`，不要把测试写入真实账号库。
+需要 Node/npm、Rust、Go 和对应系统 Tauri 构建工具。本 fork 的打包覆盖配置使用独立应用标识与 `Cockpit Tools CPA` 名称，不生成官方 updater 签名产物，并清空官方自动更新地址，避免二次开发版本被上游自动更新覆盖。macOS 使用本地 ad-hoc 签名（`-`），未配置 Apple Developer 签名/公证；本地产物不是已公证发行版。应用仍沿用 Cockpit 数据目录，验证时应设置独立 `COCKPIT_TOOLS_DATA_DIR`，不要把测试写入真实账号库。
 
 CPA 扩展文案单独注册中英文资源；其他界面语言使用项目已有的英文回退机制，不改变原有 18 语言的翻译文件。
 

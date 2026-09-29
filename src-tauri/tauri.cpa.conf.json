@@ -3,7 +3,7 @@
   "identifier": "com.bin38.cockpit-tools-cpa",
   "bundle": {
     "createUpdaterArtifacts": false,
-    "macOS": { "bundleName": "Cockpit Tools CPA" }
+    "macOS": { "bundleName": "Cockpit Tools CPA", "signingIdentity": "-" }
   },
   "plugins": {
     "updater": { "endpoints": [] }
