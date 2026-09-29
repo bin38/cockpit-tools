@@ -615,7 +615,7 @@ pub async fn set_disabled(id: &str, name: &str, disabled: bool) -> Result<(), St
         return Err("CPA_AUTH_BLOCKED".into());
     }
     let client = client()?;
-    let result = async {
+    let result: Result<(), String> = async {
         let files = list(&client, &connection).await?;
         let file = files
             .iter()
@@ -670,7 +670,7 @@ pub async fn delete_remote(id: &str, name: &str, delete_local: bool) -> Result<(
         return Err("CPA_AUTH_BLOCKED".into());
     }
     let client = client()?;
-    let result = async {
+    let result: Result<(), String> = async {
         let files = list(&client, &connection).await?;
         let Some(file) = files.iter().find(|f| f.name == name) else {
             return Ok(());
@@ -718,7 +718,7 @@ pub async fn link_existing(id: &str, name: &str, account_id: &str) -> Result<(),
     let account = codex_account::load_account(account_id).ok_or("CPA_LOCAL_MISSING")?;
     payload(&account)?;
     let client = client()?;
-    let result = async {
+    let result: Result<(), String> = async {
         let files = list(&client, &connection).await?;
         if !files.iter().any(|f| f.name == name && writable(f)) {
             return Err("CPA_READ_ONLY".into());
