@@ -11,6 +11,7 @@ export interface CpaConnection {
   id: string;
   baseUrl: string;
   apiVersion: 'v8' | 'v0';
+  allowInsecureHttp: boolean;
   autoSync: boolean;
   defaultUpload: boolean;
   blocked: boolean;
@@ -31,7 +32,7 @@ export interface CpaUploadResult { accountId: string; fileName: string; error: s
 export const getConnection = () => invoke<CpaConnection | null>('cpa_get_connection');
 export const saveConnection = (input: {
   id: string | null; baseUrl: string; key: string | null; version: string;
-  autoSync: boolean; defaultUpload: boolean;
+  autoSync: boolean; defaultUpload: boolean; allowInsecureHttp: boolean;
 }) => invoke<CpaConnection>('cpa_save_connection', input);
 export const disconnect = (id: string) => invoke<void>('cpa_disconnect', { id });
 export const listCredentials = (id: string) => invoke<CpaRemoteFile[]>('cpa_list_credentials', { id });
