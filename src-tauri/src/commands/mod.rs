@@ -9,6 +9,7 @@ pub mod codebuddy_cn_instance;
 pub mod codebuddy_instance;
 pub mod codebuddy_session;
 pub mod codex;
+pub mod cpa_management;
 pub mod codex_proxy_engine;
 pub mod codex_unified_proxy;
 pub mod codex_pelican;

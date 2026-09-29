@@ -545,6 +545,7 @@ pub fn run() {
             }
 
             modules::provider_token_keeper::ensure_started(app.handle().clone());
+            modules::cpa_management::ensure_started();
             modules::auto_local_import::ensure_started(app.handle().clone());
             // 官方客户端临时登录会留下一次性 profile，成功/失败/取消都会清理；
             // 这里额外启动巡检，兜住异常退出后残留的临时目录与钥匙串条目。
@@ -776,6 +777,15 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
+            commands::cpa_management::cpa_get_connection,
+            commands::cpa_management::cpa_save_connection,
+            commands::cpa_management::cpa_disconnect,
+            commands::cpa_management::cpa_list_credentials,
+            commands::cpa_management::cpa_upload_accounts,
+            commands::cpa_management::cpa_set_disabled,
+            commands::cpa_management::cpa_delete_credential,
+            commands::cpa_management::cpa_stop_sync,
+            commands::cpa_management::cpa_link_credential,
             commands::codex_pelican::codex_pelican_start,
             commands::codex_pelican::codex_pelican_retry,
             commands::codex_pelican::codex_pelican_active,
