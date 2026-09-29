@@ -398,7 +398,7 @@ export function CodexAccountsOverviewPanel(props: CodexAccountsViewProps) {
             </div>
           )}
 
-          <div className="toolbar">
+          <div className="toolbar codex-overview-toolbar">
             <div className="toolbar-left">
               <div className="search-box">
                 <Search size={16} className="search-icon" />

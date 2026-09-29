@@ -39,6 +39,8 @@ struct Connection {
     base_url: String,
     api_version: String,
     key: String,
+    #[serde(default)]
+    allow_insecure_http: bool,
     auto_sync: bool,
     #[serde(default)]
     default_upload: bool,
@@ -55,6 +57,7 @@ pub struct ConnectionView {
     id: String,
     base_url: String,
     api_version: String,
+    allow_insecure_http: bool,
     auto_sync: bool,
     default_upload: bool,
     blocked: bool,
@@ -72,6 +75,7 @@ impl Connection {
             id: self.id.clone(),
             base_url: self.base_url.clone(),
             api_version: self.api_version.clone(),
+            allow_insecure_http: self.allow_insecure_http,
             auto_sync: self.auto_sync,
             default_upload: self.default_upload,
             blocked: self.blocked,
@@ -164,7 +168,7 @@ fn current(id: &str) -> Result<Connection, String> {
     Ok(connection)
 }
 
-fn normalize_base(raw: &str) -> Result<String, String> {
+fn normalize_base(raw: &str, allow_insecure_http: bool) -> Result<String, String> {
     let mut url = Url::parse(raw.trim()).map_err(|_| "CPA_URL")?;
     if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
@@ -181,7 +185,7 @@ fn normalize_base(raw: &str) -> Result<String, String> {
         Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
         None => false,
     };
-    if url.scheme() == "http" && !loopback {
+    if url.scheme() == "http" && !loopback && !allow_insecure_http {
         return Err("CPA_HTTPS_REQUIRED".into());
     }
     let path = url.path().trim_end_matches('/');
@@ -295,9 +299,12 @@ fn resource(version: &str) -> &str {
 }
 
 fn endpoint(connection: &Connection, suffix: &str, name: Option<&str>) -> Result<Url, String> {
+    // Recheck the persisted transport policy before every request, including
+    // automatic sync. Old settings never implicitly opt into plaintext HTTP.
+    let base_url = normalize_base(&connection.base_url, connection.allow_insecure_http)?;
     let mut url = Url::parse(&format!(
         "{}/{}{}",
-        connection.base_url,
+        base_url,
         resource(&connection.api_version),
         suffix
     ))
@@ -390,13 +397,14 @@ pub async fn configure(
     version: String,
     auto_sync: bool,
     default_upload: bool,
+    allow_insecure_http: bool,
 ) -> Result<ConnectionView, String> {
     let _guard = lock()?;
     let old = load()?;
     if old.as_ref().map(|c| &c.id) != id.as_ref() {
         return Err("CPA_CONNECTION_CHANGED".into());
     }
-    let base_url = normalize_base(&base_url)?;
+    let base_url = normalize_base(&base_url, allow_insecure_http)?;
     if let Some(old) = &old {
         if old.base_url != base_url && !old.bindings.is_empty() {
             return Err("CPA_DISCONNECT_FIRST".into());
@@ -425,6 +433,7 @@ pub async fn configure(
             version.clone()
         },
         key: key.trim().into(),
+        allow_insecure_http,
         auto_sync,
         default_upload,
         blocked: false,

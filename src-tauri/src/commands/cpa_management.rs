@@ -13,8 +13,18 @@ pub async fn cpa_save_connection(
     version: String,
     auto_sync: bool,
     default_upload: bool,
+    allow_insecure_http: Option<bool>,
 ) -> Result<ConnectionView, String> {
-    cpa::configure(id, base_url, key, version, auto_sync, default_upload).await
+    cpa::configure(
+        id,
+        base_url,
+        key,
+        version,
+        auto_sync,
+        default_upload,
+        allow_insecure_http.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]

@@ -95,5 +95,23 @@ test('settings do not expose saved key, default upload is opt-in and accounts st
   assert.equal(inputs.filter(n => n.props.type === 'checkbox')[1].props.checked, false);
   h.button('cpa.testSave').props.onClick(); await settlePromises();
   assert.equal(h.calls[0][1].key, null); assert.equal(h.calls[0][1].defaultUpload, false);
+  assert.equal(h.calls[0][1].allowInsecureHttp, false);
+  h.h.unmount();
+});
+
+test('HTTP consent is explicit, included in save and reset when server address changes', async () => {
+  const h = harness(); await settlePromises(); h.button('cpa.settings').props.onClick();
+  const httpCheckbox = () => nodes(h.h.flush()).find(n => n.type === 'input' && n.props['aria-describedby'] === 'cpa-http-warning')!;
+  assert.equal(httpCheckbox().props.checked, false);
+  assert.match(text(h.h.flush()), /cpa.httpWarning/);
+  httpCheckbox().props.onChange({ target: { checked: true } });
+  assert.equal(httpCheckbox().props.checked, true);
+  const address = nodes(h.h.flush()).find(n => n.type === 'input' && n.props.placeholder === 'https://cpa.example.com')!;
+  address.props.onChange({ target: { value: 'http://192.168.1.50:8317' } });
+  assert.equal(httpCheckbox().props.checked, false, 'previous-server acknowledgement must not carry over');
+  httpCheckbox().props.onChange({ target: { checked: true } });
+  h.button('cpa.testSave').props.onClick(); await settlePromises();
+  assert.equal(h.calls[0][1].baseUrl, 'http://192.168.1.50:8317');
+  assert.equal(h.calls[0][1].allowInsecureHttp, true);
   h.h.unmount();
 });

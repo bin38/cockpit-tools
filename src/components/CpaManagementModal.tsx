@@ -32,6 +32,7 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
   const [version, setVersion] = useState('auto');
   const [autoSync, setAutoSync] = useState(true);
   const [defaultUpload, setDefaultUpload] = useState(false);
+  const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [files, setFiles] = useState<api.CpaRemoteFile[]>([]);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -78,11 +79,12 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
     if (busyRef.current) return;
     setBaseUrl(connection?.baseUrl || ''); setVersion(connection?.apiVersion || 'auto');
     setAutoSync(connection?.autoSync ?? true); setDefaultUpload(connection?.defaultUpload ?? false);
+    setAllowInsecureHttp(connection?.allowInsecureHttp ?? false);
     setKey(''); setEditing(true); error.clear();
   };
   const save = () => void execute(async () => {
     const result = await api.saveConnection({ id: connection?.id || null, baseUrl,
-      key: key.trim() || null, version, autoSync, defaultUpload });
+      key: key.trim() || null, version, autoSync, defaultUpload, allowInsecureHttp });
     if (!mounted.current) return;
     setKey(''); setConnection(result); setEditing(false); setResults([]);
     setNotice(t('cpa.saved'));
@@ -102,6 +104,7 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
         if (!mounted.current) return;
         setConfirmation(null); setFiles([]); setRemoteLoaded(false); setResults([]);
         setConnection(null); setKey(''); setBaseUrl(''); setEditing(true); setDefaultUpload(false);
+        setAllowInsecureHttp(false);
         return;
       }
       if (snapshot.kind === 'upload') {
@@ -140,6 +143,7 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
           {notice && <p role="status" className="cpa-notice">{notice}</p>}
           {!initialized && !busy && <button className="btn btn-secondary" onClick={() => void execute(load)}>{t('cpa.retry')}</button>}
           {connection?.lastError && <p className="cpa-warning">{explain(connection.lastError)}</p>}
+          {connection?.allowInsecureHttp && connection.baseUrl.startsWith('http:') && !editing && <p className="cpa-warning" role="note">{t('cpa.httpWarning')}</p>}
           {confirmation ? (
             <section className="cpa-confirm">
               <h3>{t(`cpa.confirm.${confirmation.kind}`)}</h3>
@@ -169,13 +173,15 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
           ) : <>
             {initialized && editing ? <fieldset className="cpa-settings" disabled={busy}>
               <legend>{t('cpa.settings')}</legend>
-              <label>{t('cpa.server')}<input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://cpa.example.com" autoComplete="off" /></label>
+              <label>{t('cpa.server')}<input value={baseUrl} onChange={e => { setBaseUrl(e.target.value); setAllowInsecureHttp(false); }} placeholder="https://cpa.example.com" autoComplete="off" /></label>
               <label>{t('cpa.key')}<input type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="new-password" placeholder={connection ? t('cpa.keepKey') : 'Management Key'} /></label>
               <label>{t('cpa.version')}<select value={version} onChange={e => setVersion(e.target.value)}>
                 <option value="auto">{t('cpa.autoVersion')}</option><option value="v8">v8</option><option value="v0">v0</option>
               </select></label>
               <label className="cpa-checkbox"><input type="checkbox" checked={autoSync} onChange={e => setAutoSync(e.target.checked)} />{t('cpa.autoSync')}</label>
               <label className="cpa-checkbox"><input type="checkbox" checked={defaultUpload} onChange={e => setDefaultUpload(e.target.checked)} />{t('cpa.defaultUpload')}</label>
+              <label className="cpa-checkbox"><input type="checkbox" checked={allowInsecureHttp} onChange={e => setAllowInsecureHttp(e.target.checked)} aria-describedby="cpa-http-warning" />{t('cpa.allowInsecureHttp')}</label>
+              <p id="cpa-http-warning" className="cpa-warning">{t('cpa.httpWarning')}</p>
               <p className="cpa-hint">{t('cpa.settingsHint')}</p>
               <div className="cpa-actions"><button className="btn btn-primary" disabled={!baseUrl.trim() || (!connection && !key.trim())} onClick={save}>{t('cpa.testSave')}</button>
                 {connection && <button className="btn btn-secondary" onClick={() => { setKey(''); setEditing(false); }}>{t('common.cancel')}</button>}</div>

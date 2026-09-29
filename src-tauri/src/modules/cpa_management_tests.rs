@@ -29,6 +29,7 @@ fn connection(base_url: String) -> Connection {
         base_url,
         api_version: "v8".into(),
         key: "management-secret".into(),
+        allow_insecure_http: false,
         auto_sync: true,
         default_upload: false,
         known_account_ids: HashSet::new(),
@@ -86,14 +87,14 @@ fn server(
 #[test]
 fn urls_filenames_and_ids_fail_closed() {
     assert_eq!(
-        normalize_base("https://example.com/prefix/v8/management/").unwrap(),
+        normalize_base("https://example.com/prefix/v8/management/", false).unwrap(),
         "https://example.com/prefix"
     );
     assert_eq!(
-        normalize_base("http://127.0.0.1:8317").unwrap(),
+        normalize_base("http://127.0.0.1:8317", false).unwrap(),
         "http://127.0.0.1:8317"
     );
-    assert!(normalize_base("http://[::1]:8317").is_ok());
+    assert!(normalize_base("http://[::1]:8317", false).is_ok());
     for url in [
         "http://example.com",
         "ftp://example.com",
@@ -102,7 +103,7 @@ fn urls_filenames_and_ids_fail_closed() {
         "https://example.com/#x",
         "https://example.com/v1",
     ] {
-        assert!(normalize_base(url).is_err(), "{url}");
+        assert!(normalize_base(url, false).is_err(), "{url}");
     }
     for name in [
         "../file.json",
@@ -298,10 +299,13 @@ async fn configure_detects_v0_without_mutating_remote_and_encrypts_key() {
         "auto".into(),
         true,
         false,
+        true,
     )
     .await
     .unwrap();
     assert_eq!(view.api_version, "v0");
+    assert!(view.allow_insecure_http);
+    assert!(load().unwrap().unwrap().allow_insecure_http);
     thread.join().unwrap();
     assert!(calls.lock().unwrap().iter().all(|r| r.starts_with("GET ")));
     let disk = fs::read_to_string(storage_path().unwrap()).unwrap();
@@ -498,4 +502,61 @@ async fn replaced_remote_identity_blocks_token_update() {
     assert_eq!(result.err().unwrap(), "CPA_IDENTITY_MISMATCH");
     assert_eq!(calls.lock().unwrap().len(), 1);
     assert!(calls.lock().unwrap()[0].starts_with("GET "));
+}
+
+#[test]
+fn remote_http_requires_explicit_per_connection_consent() {
+    for raw in [
+        "http://192.168.1.50:8317",
+        "http://cpa.example.com/prefix/v0/management",
+        "http://[2001:db8::1]:8317",
+    ] {
+        assert_eq!(
+            normalize_base(raw, false).unwrap_err(),
+            "CPA_HTTPS_REQUIRED"
+        );
+        assert!(normalize_base(raw, true).is_ok());
+        assert!(
+            normalize_base(raw, false).is_err(),
+            "consent must not be global"
+        );
+    }
+    for raw in [
+        "ftp://example.com",
+        "http://user:key@example.com",
+        "http://example.com?key=secret",
+        "http://example.com/#token",
+    ] {
+        assert_eq!(normalize_base(raw, true).unwrap_err(), "CPA_URL");
+    }
+}
+
+#[test]
+fn legacy_settings_do_not_enable_http_and_requests_recheck_policy() {
+    let mut raw = serde_json::to_value(connection("http://cpa.example.com".into())).unwrap();
+    raw.as_object_mut().unwrap().remove("allowInsecureHttp");
+    let mut conn: Connection = serde_json::from_value(raw).unwrap();
+    assert!(!conn.allow_insecure_http);
+    for suffix in ["", "/fields", "/status", "/download"] {
+        assert_eq!(
+            endpoint(&conn, suffix, None).unwrap_err(),
+            "CPA_HTTPS_REQUIRED"
+        );
+    }
+    conn.allow_insecure_http = true;
+    assert_eq!(
+        endpoint(&conn, "", None).unwrap().as_str(),
+        "http://cpa.example.com/v8/management/credentials"
+    );
+    conn.allow_insecure_http = false;
+    assert!(endpoint(&conn, "", None).is_err());
+}
+
+#[tokio::test]
+async fn disallowed_http_is_rejected_before_any_outbound_request() {
+    let conn = connection("http://never-contact.invalid".into());
+    assert_eq!(
+        list(&client().unwrap(), &conn).await.err().unwrap(),
+        "CPA_HTTPS_REQUIRED"
+    );
 }
