@@ -42,6 +42,7 @@ pub mod codex_instance;
 pub mod codex_local_access;
 pub mod codex_managed_model_catalog_version;
 pub mod codex_oauth;
+pub(crate) mod codex_provider_protocol;
 pub mod codex_pelican;
 pub mod codex_pelican_preview;
 pub mod codex_official_app_server;
