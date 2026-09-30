@@ -358,7 +358,9 @@ Grok CLI 默认实例通常直接沿用官方 `~/.grok` 目录，启动时不设
 前往 [GitHub Releases](https://github.com/jlcodes99/cockpit-tools/releases) 下载对应系统的安装包：
 
 *   **macOS**: `.dmg` (Apple Silicon & Intel)
-*   **Windows**: `.msi` (推荐) 或 `.exe`
+*   **Windows**: `.msi`（推荐）、`.exe`，或 `x64-portable.zip`（解压即用，无需安装）
+
+Windows 便携包解压后直接运行其中的 `Cockpit Tools.exe`（或同名主程序）。系统需要 Windows 10/11 的 Microsoft Edge WebView2 Runtime；账号和配置仍按当前 Windows 用户目录保存，不会随 ZIP 文件夹自动迁移。
 *   **Linux**: `.deb` (Debian/Ubuntu)、`.rpm` 或 `.AppImage` (通用)
 
 ### 选项 B: Homebrew 安装 (macOS)

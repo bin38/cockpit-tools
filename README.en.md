@@ -361,7 +361,9 @@ Notes:
 Go to [GitHub Releases](https://github.com/jlcodes99/cockpit-tools/releases) to download the package for your system:
 
 *   **macOS**: `.dmg` (Apple Silicon & Intel)
-*   **Windows**: `.msi` (Recommended) or `.exe`
+*   **Windows**: `.msi` (Recommended), `.exe`, or `x64-portable.zip` (extract and run)
+
+Extract the Windows portable archive and run the included `Cockpit Tools.exe` (or the bundled main executable). Windows 10/11 with the Microsoft Edge WebView2 Runtime is required. Accounts and settings remain in the current Windows user's data directory and are not moved with the ZIP folder.
 *   **Linux**: `.deb` (Debian/Ubuntu), `.rpm`, or `.AppImage` (Universal)
 
 ### Option B: Install with Homebrew (macOS)
