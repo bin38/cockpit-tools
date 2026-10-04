@@ -14,6 +14,7 @@ pub async fn cpa_save_connection(
     auto_sync: bool,
     default_upload: bool,
     allow_insecure_http: Option<bool>,
+    auto_delete_invalid: Option<bool>,
 ) -> Result<ConnectionView, String> {
     cpa::configure(
         id,
@@ -23,6 +24,7 @@ pub async fn cpa_save_connection(
         auto_sync,
         default_upload,
         allow_insecure_http.unwrap_or(false),
+        auto_delete_invalid.unwrap_or(false),
     )
     .await
 }

@@ -116,6 +116,7 @@ fn wait_for_codex_default_start_pid(
     let started = Instant::now();
     let mut stable_pid = None;
     let mut stable_count = 0usize;
+    let mut first_candidate_seen = false;
 
     while started.elapsed() < timeout {
         let fast_entries = collect_codex_windows_default_process_entries(
@@ -135,6 +136,13 @@ fn wait_for_codex_default_start_pid(
         );
         stable_pid = candidate;
         stable_count = streak;
+        if candidate.is_some() && !first_candidate_seen {
+            first_candidate_seen = true;
+            crate::modules::logger::log_info(&format!(
+                "[Codex Start] first default process elapsed_ms={}",
+                started.elapsed().as_millis()
+            ));
+        }
 
         if stable_count >= 3 {
             let old_pids_still_running = before_default_pids
@@ -214,7 +222,7 @@ fn start_codex_default_internal(
             &[],
             egress_proxy_url,
         )
-            .map_err(|e| format!("启动 Codex 失败: {}", e))?;
+        .map_err(|e| format!("启动 Codex 失败: {}", e))?;
         crate::modules::logger::log_info("Codex 默认实例启动命令已发送（open -n -a）");
         let probe_started = Instant::now();
         let timeout = Duration::from_secs(6);
@@ -238,7 +246,7 @@ fn start_codex_default_internal(
     {
         use std::os::windows::process::CommandExt;
 
-        let launch_path_for_probe = resolve_codex_launch_path().ok();
+        let mut launch_path_for_probe = resolve_codex_launch_path().ok();
         let before_probe_started = Instant::now();
         let default_home = crate::modules::codex_account::get_codex_home()
             .to_string_lossy()
@@ -291,6 +299,8 @@ fn start_codex_default_internal(
             ) {
                 Ok(()) => {
                     store_entry_launched = true;
+                    // Activation may have refreshed an old Store installation.
+                    launch_path_for_probe = resolve_codex_launch_path().ok();
                     crate::modules::logger::log_info(&format!(
                         "[Codex Start] 已通过系统入口启动 Codex: {}",
                         app_user_model_id
@@ -320,9 +330,10 @@ fn start_codex_default_internal(
                 }
                 Err(err) => {
                     crate::modules::logger::log_warn(&format!(
-                        "[Codex Start] 系统入口启动失败，准备回退可执行路径: {}",
+                        "[Codex Start] 系统入口启动失败，停止本次启动以避免重复激活: {}",
                         err
                     ));
+                    return Err(err);
                 }
             }
         } else {
@@ -619,6 +630,44 @@ fn close_windows_codex_default_pids(pids: &[u32], timeout_secs: u64) -> Result<(
 }
 
 #[cfg(target_os = "windows")]
+fn codex_windows_last_pid_is_stale(pid: u32) -> bool {
+    // last_pid 是历史提示，不是进程身份；Windows 可以把退出后的 PID 分配给其他程序。
+    // 在探测未命中后重新读取该 PID，同时覆盖探测期间退出的竞态。
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let process = system.process(Pid::from_u32(pid));
+    let name = process.map(|process| process.name().to_string_lossy());
+    let exe = process
+        .and_then(|process| process.exe())
+        .map(|path| path.to_string_lossy());
+    let stale =
+        codex_windows_process_snapshot_is_stale(name.as_deref().map(|name| (name, exe.as_deref())));
+    crate::modules::logger::log_info(&format!(
+        "[Codex Close] rechecked last_pid={}, process_name={:?}, exe={:?}, stale={}",
+        pid, name, exe, stale
+    ));
+    stale
+}
+
+/// 仅放行明确已退出或不属于 ChatGPT 的旧 PID；路径/命令行不可读不等于进程已退出。
+#[cfg(any(test, target_os = "windows"))]
+fn codex_windows_process_snapshot_is_stale(process: Option<(&str, Option<&str>)>) -> bool {
+    let Some((name, exe)) = process else {
+        return true;
+    };
+    let identity = exe
+        .filter(|path| !path.trim().is_empty())
+        .and_then(|path| path.rsplit(['\\', '/']).next())
+        .unwrap_or(name)
+        .trim();
+    !identity.is_empty() && !identity.eq_ignore_ascii_case("chatgpt.exe")
+}
+
+#[cfg(target_os = "windows")]
 fn close_codex_default_windows(timeout_secs: u64) -> Result<(), String> {
     let launch_path = resolve_codex_launch_path()?;
     let launch_path_text = launch_path.to_string_lossy().to_string();
@@ -630,19 +679,11 @@ fn close_codex_default_windows(timeout_secs: u64) -> Result<(), String> {
         .ok()
         .and_then(|settings| settings.last_pid);
 
-    let mut all_entries = Vec::new();
-    let mut default_entries = Vec::new();
-    for attempt in 0..3 {
-        all_entries = collect_codex_process_entries_complete();
-        default_entries =
-            filter_codex_windows_default_process_entries(&all_entries, &default_app_dirs);
-        if !default_entries.is_empty() {
-            break;
-        }
-        if attempt < 2 {
-            thread::sleep(Duration::from_millis(180));
-        }
-    }
+    // An absent default instance is a normal state, not a reason to repeat a
+    // full process probe three times. Retain the last-PID ownership guard below.
+    let all_entries = try_collect_codex_process_entries_complete()?;
+    let default_entries =
+        filter_codex_windows_default_process_entries(&all_entries, &default_app_dirs);
 
     let mut pids = default_entries
         .iter()
@@ -666,6 +707,12 @@ fn close_codex_default_windows(timeout_secs: u64) -> Result<(), String> {
                     crate::modules::logger::log_info(&format!(
                         "[Codex Close] last_pid={} belongs to a managed instance (dir={:?}), skip default close",
                         pid, dir
+                    ));
+                }
+                None if codex_windows_last_pid_is_stale(pid) => {
+                    crate::modules::logger::log_info(&format!(
+                        "[Codex Close] ignoring stale last_pid={}, no default ChatGPT process found",
+                        pid
                     ));
                 }
                 None => {
@@ -695,7 +742,7 @@ fn close_codex_default_windows(timeout_secs: u64) -> Result<(), String> {
 
     let mut remaining = Vec::new();
     for attempt in 0..3 {
-        let entries = collect_codex_process_entries_complete();
+        let entries = try_collect_codex_process_entries_complete()?;
         remaining = filter_codex_windows_default_process_entries(&entries, &default_app_dirs)
             .into_iter()
             .map(|(pid, _)| pid)
@@ -1102,7 +1149,7 @@ pub fn close_codex_instances(codex_homes: &[String], timeout_secs: u64) -> Resul
             }
         };
 
-        let entries = collect_codex_process_entries();
+        let entries = try_collect_codex_process_entries_complete()?;
         let mut pids: Vec<u32> = entries
             .iter()
             .filter_map(|(pid, dir)| {
@@ -1861,11 +1908,8 @@ pub fn kill_managed_sidecar_port_processes(
         let matching_sidecar =
             managed_sidecar_command_matches(&command_line, binary_name, config_path);
         let parent_running = parent_pid.is_some_and(is_pid_running);
-        let owned_or_orphaned = managed_sidecar_parent_allows_cleanup(
-            parent_pid,
-            current_parent_pid,
-            parent_running,
-        );
+        let owned_or_orphaned =
+            managed_sidecar_parent_allows_cleanup(parent_pid, current_parent_pid, parent_running);
         if !matching_sidecar || !owned_or_orphaned {
             return Err(format!(
                 "端口 {} 由其他运行中的进程占用，已保留该进程: pid={}, parent_pid={}",

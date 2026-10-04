@@ -8,6 +8,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.65] - 2026-10-02
+
+### Changed
+
+- Codex Pro badges now consistently show PRO 100, PRO 200 and PRO 500, with official tier values taking precedence. Distinct colors make tiers easier to identify; PRO 500 adds subtle light-sweep and sparkle effects that respect reduced-motion preferences.
+
+### Fixed
+
+- Fix Codex official-login credential recovery and account switching with Windows secure authentication storage. Failed final imports retain credentials and support retrying the import.
+- Reduce stalls and duplicate profile requests when importing many Codex accounts, and prevent profile refreshes from overwriting newer account information.
+- Improve Codex account switching and startup speed on Windows, reduce process-probe timeouts and repeated waits, and fix the black terminal window appearing during startup.
+- Fix default-instance startup after switching from an account to API Service. Failed binding saves stop startup and report an error.
+
+## [1.3.64] - 2026-10-01
+
+### Changed
+
+- Shared data directory entries now use `.cockpit_tools` / `.cockpit_tools_dev`. Existing installations automatically retain access through compatibility links, preserving stored accounts and running instance paths without manual migration. Codex provider previews show the actual configured storage paths.
+
+### Fixed
+
+- Fix Windows Codex switching and startup being blocked by a saved process ID that has exited or been reused by another program, while preserving instance ownership checks for ChatGPT processes.
+
+- Fix configured proxies not reliably reaching Codex subprocesses when launching the default Microsoft Store instance on Windows.
+
+- Fix Codex model-provider Responses streams buffering replies until generation ends; events now reach the client as they arrive.
+
 ## [1.3.63] - 2026-09-30
 
 ### Added
