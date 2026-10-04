@@ -96,6 +96,7 @@ test('settings do not expose saved key, default upload is opt-in and accounts st
   h.button('cpa.testSave').props.onClick(); await settlePromises();
   assert.equal(h.calls[0][1].key, null); assert.equal(h.calls[0][1].defaultUpload, false);
   assert.equal(h.calls[0][1].allowInsecureHttp, false);
+  assert.equal(h.calls[0][1].autoDeleteInvalid, false);
   h.h.unmount();
 });
 
@@ -113,5 +114,20 @@ test('HTTP consent is explicit, included in save and reset when server address c
   h.button('cpa.testSave').props.onClick(); await settlePromises();
   assert.equal(h.calls[0][1].baseUrl, 'http://192.168.1.50:8317');
   assert.equal(h.calls[0][1].allowInsecureHttp, true);
+  h.h.unmount();
+});
+
+test('automatic cleanup is opt-in, explained, sent on save and resets for a new server', async () => {
+  const h = harness(); await settlePromises(); h.button('cpa.settings').props.onClick();
+  const toggle = () => nodes(h.h.flush()).find(n => n.type === 'input' && n.props['aria-describedby'] === 'cpa-cleanup-warning')!;
+  assert.equal(toggle().props.checked, false);
+  assert.match(text(h.h.flush()), /cpa.cleanupWarning/);
+  toggle().props.onChange({ target: { checked: true } });
+  const address = nodes(h.h.flush()).find(n => n.type === 'input' && n.props.placeholder === 'https://cpa.example.com')!;
+  address.props.onChange({ target: { value: 'https://new.example.com' } });
+  assert.equal(toggle().props.checked, false);
+  toggle().props.onChange({ target: { checked: true } });
+  h.button('cpa.testSave').props.onClick(); await settlePromises();
+  assert.equal(h.calls[0][1].autoDeleteInvalid, true);
   h.h.unmount();
 });

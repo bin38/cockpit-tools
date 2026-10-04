@@ -33,6 +33,7 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
   const [autoSync, setAutoSync] = useState(true);
   const [defaultUpload, setDefaultUpload] = useState(false);
   const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
+  const [autoDeleteInvalid, setAutoDeleteInvalid] = useState(false);
   const [files, setFiles] = useState<api.CpaRemoteFile[]>([]);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -80,11 +81,12 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
     setBaseUrl(connection?.baseUrl || ''); setVersion(connection?.apiVersion || 'auto');
     setAutoSync(connection?.autoSync ?? true); setDefaultUpload(connection?.defaultUpload ?? false);
     setAllowInsecureHttp(connection?.allowInsecureHttp ?? false);
+    setAutoDeleteInvalid(connection?.autoDeleteInvalid ?? false);
     setKey(''); setEditing(true); error.clear();
   };
   const save = () => void execute(async () => {
     const result = await api.saveConnection({ id: connection?.id || null, baseUrl,
-      key: key.trim() || null, version, autoSync, defaultUpload, allowInsecureHttp });
+      key: key.trim() || null, version, autoSync, defaultUpload, allowInsecureHttp, autoDeleteInvalid });
     if (!mounted.current) return;
     setKey(''); setConnection(result); setEditing(false); setResults([]);
     setNotice(t('cpa.saved'));
@@ -105,6 +107,7 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
         setConfirmation(null); setFiles([]); setRemoteLoaded(false); setResults([]);
         setConnection(null); setKey(''); setBaseUrl(''); setEditing(true); setDefaultUpload(false);
         setAllowInsecureHttp(false);
+        setAutoDeleteInvalid(false);
         return;
       }
       if (snapshot.kind === 'upload') {
@@ -173,7 +176,7 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
           ) : <>
             {initialized && editing ? <fieldset className="cpa-settings" disabled={busy}>
               <legend>{t('cpa.settings')}</legend>
-              <label>{t('cpa.server')}<input value={baseUrl} onChange={e => { setBaseUrl(e.target.value); setAllowInsecureHttp(false); }} placeholder="https://cpa.example.com" autoComplete="off" /></label>
+              <label>{t('cpa.server')}<input value={baseUrl} onChange={e => { setBaseUrl(e.target.value); setAllowInsecureHttp(false); setAutoDeleteInvalid(false); }} placeholder="https://cpa.example.com" autoComplete="off" /></label>
               <label>{t('cpa.key')}<input type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="new-password" placeholder={connection ? t('cpa.keepKey') : 'Management Key'} /></label>
               <label>{t('cpa.version')}<select value={version} onChange={e => setVersion(e.target.value)}>
                 <option value="auto">{t('cpa.autoVersion')}</option><option value="v8">v8</option><option value="v0">v0</option>
@@ -182,11 +185,13 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
               <label className="cpa-checkbox"><input type="checkbox" checked={defaultUpload} onChange={e => setDefaultUpload(e.target.checked)} />{t('cpa.defaultUpload')}</label>
               <label className="cpa-checkbox"><input type="checkbox" checked={allowInsecureHttp} onChange={e => setAllowInsecureHttp(e.target.checked)} aria-describedby="cpa-http-warning" />{t('cpa.allowInsecureHttp')}</label>
               <p id="cpa-http-warning" className="cpa-warning">{t('cpa.httpWarning')}</p>
+              <label className="cpa-checkbox"><input type="checkbox" checked={autoDeleteInvalid} onChange={e => setAutoDeleteInvalid(e.target.checked)} aria-describedby="cpa-cleanup-warning" />{t('cpa.autoDeleteInvalid')}</label>
+              <p id="cpa-cleanup-warning" className="cpa-warning">{t('cpa.cleanupWarning')}</p>
               <p className="cpa-hint">{t('cpa.settingsHint')}</p>
               <div className="cpa-actions"><button className="btn btn-primary" disabled={!baseUrl.trim() || (!connection && !key.trim())} onClick={save}>{t('cpa.testSave')}</button>
                 {connection && <button className="btn btn-secondary" onClick={() => { setKey(''); setEditing(false); }}>{t('common.cancel')}</button>}</div>
             </fieldset> : connection && <div className="cpa-connection">
-              <div><strong>{connection.baseUrl}</strong><span>{connection.apiVersion} · {t(connection.autoSync ? 'cpa.syncOn' : 'cpa.syncOff')} · {t(connection.defaultUpload ? 'cpa.defaultOn' : 'cpa.defaultOff')}</span></div>
+              <div><strong>{connection.baseUrl}</strong><span>{connection.apiVersion} · {t(connection.autoSync ? 'cpa.syncOn' : 'cpa.syncOff')} · {t(connection.defaultUpload ? 'cpa.defaultOn' : 'cpa.defaultOff')} · {t(connection.autoDeleteInvalid ? 'cpa.cleanupOn' : 'cpa.cleanupOff')}</span></div>
               <button className="btn btn-secondary" disabled={busy} onClick={beginEdit}>{t('cpa.settings')}</button>
               <button className="btn btn-secondary" disabled={busy} onClick={() => ask({ kind: 'disconnect' })}>{t('cpa.disconnect')}</button>
             </div>}
@@ -204,6 +209,7 @@ export function CpaManagementModal({ accounts, initialSelected, maskAccountText:
                         const next = new Set(previous); if (e.target.checked) next.add(a.id); else next.delete(a.id); return next;
                       })} />{label(a.id)}</label>
                       <span className="cpa-row-detail">{binding ? (binding.error ? explain(binding.error) : t('cpa.synced', { time: binding.lastSyncedAt ? new Date(binding.lastSyncedAt * 1000).toLocaleString() : '—' })) : t('cpa.notLinked')}</span>
+                      {binding?.cleanupAttempted && binding.error !== 'CPA_INVALID_ACCOUNT_DELETED' && <span className="cpa-row-detail">{t('cpa.cleanupRetryHint')}</span>}
                       {binding?.active && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void execute(async () => { await api.stopSync(connection.id, a.id); if (mounted.current) await load(); })}>{t('cpa.stopSync')}</button>}
                     </div>;
                   })}

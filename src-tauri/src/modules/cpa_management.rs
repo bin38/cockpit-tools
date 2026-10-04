@@ -28,6 +28,9 @@ pub struct Binding {
     pub active: bool,
     pub last_synced_at: Option<i64>,
     pub error: Option<String>,
+    // Durable fence: a crash/uncertain DELETE is never repeated blindly.
+    #[serde(default)]
+    pub cleanup_attempted: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     fingerprint: String,
 }
@@ -45,6 +48,8 @@ struct Connection {
     #[serde(default)]
     default_upload: bool,
     #[serde(default)]
+    auto_delete_invalid: bool,
+    #[serde(default)]
     known_account_ids: HashSet<String>,
     blocked: bool,
     last_error: Option<String>,
@@ -60,6 +65,7 @@ pub struct ConnectionView {
     allow_insecure_http: bool,
     auto_sync: bool,
     default_upload: bool,
+    auto_delete_invalid: bool,
     blocked: bool,
     last_error: Option<String>,
     bindings: Vec<Binding>,
@@ -78,6 +84,7 @@ impl Connection {
             allow_insecure_http: self.allow_insecure_http,
             auto_sync: self.auto_sync,
             default_upload: self.default_upload,
+            auto_delete_invalid: self.auto_delete_invalid,
             blocked: self.blocked,
             last_error: self.last_error.clone(),
             bindings,
@@ -243,6 +250,9 @@ fn valid_account_id(id: &str) -> bool {
 }
 
 fn payload(account: &CodexAccount) -> Result<Value, String> {
+    if authorization_invalid(account) {
+        return Err("CPA_LOCAL_AUTH_INVALID".into());
+    }
     if account.is_api_key_auth()
         || account.is_agent_identity_auth()
         || account.is_web_session_auth()
@@ -398,6 +408,7 @@ pub async fn configure(
     auto_sync: bool,
     default_upload: bool,
     allow_insecure_http: bool,
+    auto_delete_invalid: bool,
 ) -> Result<ConnectionView, String> {
     let _guard = lock()?;
     let old = load()?;
@@ -436,6 +447,7 @@ pub async fn configure(
         allow_insecure_http,
         auto_sync,
         default_upload,
+        auto_delete_invalid,
         blocked: false,
         last_error: None,
         known_account_ids: if default_upload && old.as_ref().is_some_and(|c| c.default_upload) {
@@ -617,6 +629,7 @@ pub async fn upload(id: &str, account_ids: Vec<String>) -> Result<Vec<UploadResu
                         active: false,
                         last_synced_at: None,
                         error: Some("CPA_VERIFY_REQUIRED".into()),
+                        cleanup_attempted: false,
                         fingerprint: String::new(),
                     });
                     persist(&connection)?;
@@ -817,6 +830,7 @@ pub async fn link_existing(id: &str, name: &str, account_id: &str) -> Result<(),
         active: false,
         last_synced_at: None,
         error: Some("CPA_LINKED_NOT_UPLOADED".into()),
+        cleanup_attempted: false,
         fingerprint: String::new(),
     });
     persist(&connection)
@@ -835,11 +849,150 @@ pub fn stop_sync(id: &str, account_id: &str) -> Result<(), String> {
     persist(&connection)
 }
 
+// Use explicit terminal authorization codes, never a generic 401/403, expired
+// access JWT, depleted quota, local login page, network/proxy or region error.
+fn authorization_invalid(account: &CodexAccount) -> bool {
+    if account.is_api_key_auth()
+        || account.is_agent_identity_auth()
+        || account.is_web_session_auth()
+        || account.upstream_grok_account_id.is_some()
+        || account.tokens.access_token.starts_with("at-")
+    {
+        return false;
+    }
+    let terminal_code = |value: &str| {
+        value
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .any(|code| {
+                matches!(
+                    code.to_ascii_lowercase().as_str(),
+                    "token_revoked"
+                        | "token_invalidated"
+                        | "refresh_token_invalidated"
+                        | "refresh_token_expired"
+                        | "invalid_grant"
+                        | "invalid_refresh_token"
+                        | "account_deactivated"
+                        | "account_disabled"
+                )
+            })
+    };
+    (account.requires_reauth && account.reauth_reason.as_deref().is_some_and(terminal_code))
+        || account.quota_error.as_ref().is_some_and(|error| {
+            // Do not act on a quota response recorded before newer credentials.
+            error.timestamp >= account.token_updated_at.unwrap_or(0)
+                && (error.code.as_deref().is_some_and(terminal_code)
+                    || terminal_code(&error.message))
+        })
+}
+
+async fn cleanup_invalid_accounts(connection: &mut Connection) -> Result<(), String> {
+    if !connection.auto_delete_invalid {
+        return Ok(());
+    }
+    for index in 0..connection.bindings.len() {
+        let binding = connection.bindings[index].clone();
+        if binding.cleanup_attempted
+            || !valid_account_id(&binding.account_id)
+            || !valid_filename(&binding.file_name)
+        {
+            continue;
+        }
+        let token_lock = codex_account::codex_token_lock_for(&binding.account_id);
+        let Ok(_token_guard) = token_lock.try_lock() else {
+            continue;
+        };
+        let Some(account) = codex_account::load_account(&binding.account_id) else {
+            continue;
+        };
+        if !authorization_invalid(&account) {
+            continue;
+        }
+        let identity = json!({"account_id":account.account_id,"email":account.email});
+        // Persist before even the first read. No retry/upload after a crash or
+        // ambiguous result; user can inspect the file and explicitly delete it.
+        connection.bindings[index].active = false;
+        connection.bindings[index].cleanup_attempted = true;
+        connection.bindings[index].error = Some("CPA_CLEANUP_VERIFY_REQUIRED".into());
+        connection
+            .known_account_ids
+            .insert(binding.account_id.clone());
+        persist(connection)?;
+        let result: Result<(), String> = async {
+            let client = client()?;
+            let files = list(&client, connection).await?;
+            let Some(file) = files.iter().find(|f| f.name == binding.file_name) else {
+                return Ok(());
+            };
+            if !writable(file) {
+                return Err("CPA_READ_ONLY".into());
+            }
+            let remote = request(
+                &client,
+                connection,
+                Method::GET,
+                "/download",
+                Some(&binding.file_name),
+                None,
+            )
+            .await?;
+            if !identity_matches(&remote, &identity) {
+                return Err("CPA_IDENTITY_MISMATCH".into());
+            }
+            // Reauthentication/import may replace credentials while the remote
+            // read is in flight. Recheck the current local snapshot before DELETE.
+            let latest =
+                codex_account::load_account(&binding.account_id).ok_or("CPA_LOCAL_MISSING")?;
+            if !authorization_invalid(&latest)
+                || latest.token_generation != account.token_generation
+                || latest.tokens.access_token != account.tokens.access_token
+                || latest.account_id != account.account_id
+                || latest.email != account.email
+            {
+                return Err("CPA_CLEANUP_ACCOUNT_CHANGED".into());
+            }
+            match request(
+                &client,
+                connection,
+                Method::DELETE,
+                "",
+                Some(&binding.file_name),
+                None,
+            )
+            .await
+            {
+                Ok(value) => expect_ok(value),
+                Err(error) if error == "CPA_NOT_FOUND" => Ok(()),
+                Err(error) => Err(error),
+            }
+        }
+        .await;
+        connection.bindings[index].error = Some(match result {
+            Ok(()) => "CPA_INVALID_ACCOUNT_DELETED".into(),
+            Err(error) => {
+                record_error(connection, &error)?;
+                error
+            }
+        });
+        persist(connection)?;
+        if connection.blocked {
+            break;
+        }
+    }
+    Ok(())
+}
+
 async fn sync_once() -> Result<(), String> {
     let _guard = lock()?;
     let Some(mut connection) = load()? else {
         return Ok(());
     };
+    if connection.blocked {
+        return Ok(());
+    }
+    // Cleanup is independent from token synchronization and includes stopped
+    // links. It never infers invalidity from a missing/unreadable local account.
+    cleanup_invalid_accounts(&mut connection).await?;
     if connection.blocked {
         return Ok(());
     }
@@ -851,6 +1004,7 @@ async fn sync_once() -> Result<(), String> {
             .into_iter()
             .map(|a| a.id)
             .filter(|id| !connection.known_account_ids.contains(id))
+            .filter(|id| !connection.bindings.iter().any(|b| &b.account_id == id))
             .filter(|id| codex_account::load_account(id).is_some_and(|a| payload(&a).is_ok()))
             .take(100)
             .collect();

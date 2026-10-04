@@ -6,6 +6,7 @@ export interface CpaBinding {
   active: boolean;
   lastSyncedAt: number | null;
   error: string | null;
+  cleanupAttempted: boolean;
 }
 export interface CpaConnection {
   id: string;
@@ -14,6 +15,7 @@ export interface CpaConnection {
   allowInsecureHttp: boolean;
   autoSync: boolean;
   defaultUpload: boolean;
+  autoDeleteInvalid: boolean;
   blocked: boolean;
   lastError: string | null;
   bindings: CpaBinding[];
@@ -32,7 +34,7 @@ export interface CpaUploadResult { accountId: string; fileName: string; error: s
 export const getConnection = () => invoke<CpaConnection | null>('cpa_get_connection');
 export const saveConnection = (input: {
   id: string | null; baseUrl: string; key: string | null; version: string;
-  autoSync: boolean; defaultUpload: boolean; allowInsecureHttp: boolean;
+  autoSync: boolean; defaultUpload: boolean; allowInsecureHttp: boolean; autoDeleteInvalid: boolean;
 }) => invoke<CpaConnection>('cpa_save_connection', input);
 export const disconnect = (id: string) => invoke<void>('cpa_disconnect', { id });
 export const listCredentials = (id: string) => invoke<CpaRemoteFile[]>('cpa_list_credentials', { id });
