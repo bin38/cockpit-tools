@@ -12,7 +12,6 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
-import { homeDir, join } from "@tauri-apps/api/path";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { MultiSelectFilterOption } from "../MultiSelectFilterDropdown";
 import { useEscClose } from "../../hooks/useEscClose";
@@ -31,6 +30,7 @@ import {
   addCodexAccountWithApiKey,
   deleteCodexAccounts,
   getCurrentCodexAccount,
+  getCodexStoragePaths,
   listCodexAccounts,
   syncCodexApiKeyProviderAccounts,
   updateCodexAccountName,
@@ -482,9 +482,9 @@ function resolveProviderApiKeyLabel(
 }
 
 const DEFAULT_PROVIDER_PREVIEW_PATHS: ProviderPreviewPaths = {
-  providerStorePath: "~/.antigravity_cockpit/codex_model_providers.json",
-  codexConfigPath: "~/.codex/config.toml",
-  codexAuthPath: "~/.codex/auth.json",
+  providerStorePath: "codex_model_providers.json",
+  codexConfigPath: "config.toml",
+  codexAuthPath: "auth.json",
 };
 
 function resolveDefaultProviderWireApi(
@@ -1044,21 +1044,15 @@ export function useCodexModelProviderManagerController({
 
     void (async () => {
       try {
-        const home = await homeDir();
-        const [providerStorePath, codexConfigPath, codexAuthPath] =
-          await Promise.all([
-            join(home, ".antigravity_cockpit", "codex_model_providers.json"),
-            join(home, ".codex", "config.toml"),
-            join(home, ".codex", "auth.json"),
-          ]);
+        const paths = await getCodexStoragePaths();
         if (cancelled) return;
         setPreviewPaths({
-          providerStorePath,
-          codexConfigPath,
-          codexAuthPath,
+          providerStorePath: paths.providerStorePath,
+          codexConfigPath: paths.configPath,
+          codexAuthPath: paths.authPath,
         });
       } catch {
-        // ignore path resolution failures and keep fallback preview paths
+        // Keep file names until the backend can report the actual configured paths.
       }
     })();
 

@@ -67,6 +67,8 @@ pub mod cpa_management;
 pub mod cursor_account;
 pub mod cursor_instance;
 pub mod cursor_oauth;
+#[path = "../../../crates/cockpit-core/src/modules/data_paths.rs"]
+pub mod data_paths;
 pub mod db;
 pub mod deferred_account_rewrite;
 pub mod diagnostics;
